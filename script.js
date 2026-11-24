@@ -162,6 +162,7 @@ const RegrasTrabalhistas = (() => {
       propriedade: '',
       inicioSemana: 1,                    // 1 = semana de segunda a domingo; 0 = domingo a sábado
       limiteDiarioH: 8,                   // CF, art. 7º, XIII
+      limiteApoioH: 10,                   // apoio a outro grupo na folga: até 8h + 2h extras (CLT, art. 59)
       interjornadaH: 11,                  // Lei 5.889/1973, art. 5º; CLT, art. 66
       maxDiasConsecutivos: 6,             // OJ 410 SDI-1 TST; Portaria 2.041 (1 descanso a cada 6 dias)
       somarInterjornadaAoRepouso: true,   // Súmula 110 TST: repouso de 24h + 11h = 35h
@@ -250,6 +251,7 @@ const RegrasTrabalhistas = (() => {
     const diaFim = diaIni + diasNoMes(ano, mes) - 1;
     const noMes = (d) => d >= diaIni && d <= diaFim;
     const LIM_DIA = Number(cfg.limiteDiarioH) * 60;
+    const LIM_APOIO = Math.max(LIM_DIA, (Number(cfg.limiteApoioH) || 10) * 60);
     const INTER = Number(cfg.interjornadaH) * 60;
     const EXTRA_DSR = cfg.somarInterjornadaAoRepouso ? INTER : 0;
     const MAX_CONSEC = Number(cfg.maxDiasConsecutivos) || 6;
@@ -259,6 +261,7 @@ const RegrasTrabalhistas = (() => {
 
     const turnos = new Map(estado.turnos.map((t) => [t.id, t]));
     const equipes = new Map(estado.equipes.map((e) => [e.id, e]));
+    const colabsPorId = new Map(estado.colaboradores.map((c) => [c.id, c]));
     const atividades = new Map(cfg.atividades.map((a) => [a.id, a]));
     const nomeAtiv = (id) => atividades.get(id)?.nome || id || '—';
 
@@ -278,9 +281,12 @@ const RegrasTrabalhistas = (() => {
         const inicio = d * 1440 + hhmmParaMin(t.inicio);
         for (const e of lista) {
           if (!itensPorColab.has(e.c)) itensPorColab.set(e.c, []);
+          const origem = colabsPorId.get(e.c)?.equipeId || '';
           itensPorColab.get(e.c).push({
             dia: d, iso, turno: t, inicio, fim: inicio + dur,
             trabalho: Math.max(0, dur - (Number(t.intervaloMin) || 0)), atividade: e.a,
+            // grupo apoiado na folga do grupo de origem ('' = trabalho no próprio grupo)
+            apoio: e.g && e.g !== origem && equipes.has(e.g) ? e.g : '',
           });
         }
       }
@@ -361,7 +367,29 @@ const RegrasTrabalhistas = (() => {
         resumo.diasTrab++;
         const nomesT = lista.map((i) => i.turno.nome).join(' + ');
 
-        if (total > LIM_DIA) {
+        const apoio = lista.find((i) => i.apoio);
+        if (apoio) {
+          // Apoio a outro grupo no dia de folga do grupo de origem: permitido até LIM_APOIO
+          const nomeGrupo = equipes.get(apoio.apoio)?.nome || 'outro grupo';
+          const detalheTurnos = lista.map((i) => `${i.turno.nome} ${i.turno.inicio}–${i.turno.fim}`).join(' + ');
+          if (total > LIM_APOIO) {
+            novo({
+              ...base, nivel: 'vermelho', iso, data: fmtData(iso), turno: nomesT,
+              regra: `Apoio a outro grupo acima de ${fmtHoras(LIM_APOIO)} no dia`,
+              motivo: `Na folga do grupo de origem, o colaborador apoia o grupo "${nomeGrupo}" com ${fmtHoras(total)} de trabalho (${detalheTurnos}). O apoio só é permitido até ${fmtHoras(LIM_APOIO)} de jornada diária.`,
+              sugestao: `Retire um dos turnos ou escolha turnos que somem até ${fmtHoras(LIM_APOIO)}.`,
+              fonte: `${FONTES.OPERACIONAL}; ${FONTES.CLT59}`, conferir: true,
+            });
+          } else if (total > LIM_DIA) {
+            novo({
+              ...base, nivel: 'amarelo', iso, data: fmtData(iso), turno: nomesT,
+              regra: 'Horas extras no apoio a outro grupo',
+              motivo: `Apoio ao grupo "${nomeGrupo}" com ${fmtHoras(total)} no dia (${detalheTurnos}): ${fmtHoras(total - LIM_DIA)} acima do limite normal de ${fmtHoras(LIM_DIA)}, dentro do máximo de ${fmtHoras(LIM_APOIO)} admitido para o apoio.`,
+              sugestao: 'Confirme o acordo de prorrogação e o pagamento do adicional de horas extras.',
+              fonte: FONTES.CLT59, conferir: true,
+            });
+          }
+        } else if (total > LIM_DIA) {
           novo({
             ...base, nivel: 'vermelho', iso, data: fmtData(iso), turno: nomesT,
             regra: 'Jornada diária acima do limite normal',
@@ -643,9 +671,10 @@ const RegrasTrabalhistas = (() => {
 
       /* ---- (h) Coerência com equipe, turno e atividade ---- */
       for (const it of itensMes) {
-        const eq = c.equipeId ? equipes.get(c.equipeId) : null;
+        const idEq = it.apoio || c.equipeId;
+        const eq = idEq ? equipes.get(idEq) : null;
         if (eq && !(eq.turnos || []).includes(it.turno.id)) {
-          agrupar(`eqturno|${c.id}|${it.turno.id}`, {
+          agrupar(`eqturno|${c.id}|${idEq}|${it.turno.id}`, {
             ...base, nivel: 'amarelo', turno: it.turno.nome, regra: 'Turno não habilitado para a equipe',
             motivo: `O grupo "${eq.nome}" não está habilitado para o turno ${it.turno.nome}.`,
             sugestao: 'Habilite o turno para o grupo (tela Equipes) ou escale outro colaborador.',
@@ -1297,13 +1326,61 @@ const Escala = (() => {
     for (const k of Object.keys(d.t)) if (!d.t[k].length) delete d.t[k];
     if (!Object.keys(d.t).length && !d.f.length) delete E().escala[iso];
   }
-  /** Turnos de um colaborador em uma data: [{turnoId, atividade}] (na ordem dos turnos cadastrados) */
+  const colab = (id) => E().colaboradores.find((c) => c.id === id);
+  const nomeGrupo = (eid) => E().equipes.find((e) => e.id === eid)?.nome || 'outro grupo';
+  /** Grupo apoiado pela atribuição ('' = trabalho no próprio grupo; grupo excluído conta como próprio) */
+  const grupoApoio = (cid, g) => (g && g !== (colab(cid)?.equipeId || '') && E().equipes.some((e) => e.id === g) ? g : '');
+  const trabalhoTurno = (t) => Math.max(0, duracaoTurno(t) - (Number(t.intervaloMin) || 0));
+  const limiteApoioMin = () => Math.max(Number(E().config.limiteDiarioH) || 8, Number(E().config.limiteApoioH) || 10) * 60;
+
+  /** Turnos de um colaborador em uma data: [{turnoId, atividade, apoio}] (na ordem dos turnos cadastrados) */
   function turnosDoColab(iso, cid) {
     const d = dia(iso);
     if (!d) return [];
     return E().turnos
       .filter((t) => (d.t[t.id] || []).some((e) => e.c === cid))
-      .map((t) => ({ turnoId: t.id, atividade: d.t[t.id].find((e) => e.c === cid).a }));
+      .map((t) => {
+        const e = d.t[t.id].find((x) => x.c === cid);
+        return { turnoId: t.id, atividade: e.a, apoio: grupoApoio(cid, e.g) };
+      });
+  }
+
+  /**
+   * Regras do apoio a outro grupo: no dia de folga do grupo de origem o colaborador pode
+   * trabalhar por UM outro grupo (sem turnos do próprio grupo no dia), até o limite diário de apoio.
+   * "turnos" = lista final de turnos do dia (ids); "apoio" = grupo apoiado ('' = próprio).
+   */
+  function checarApoio(cid, turnos, apoio) {
+    if (!apoio) return { ok: true };
+    const total = turnos.reduce((s, tid) => s + trabalhoTurno(turno(tid)), 0);
+    const lim = limiteApoioMin();
+    if (total > lim) {
+      return { ok: false, msg: `${nomeColab(cid)} pode apoiar o grupo "${nomeGrupo(apoio)}" na folga até ${Util.fmtHoras(lim)} por dia; os turnos escolhidos somam ${Util.fmtHoras(total)}.` };
+    }
+    return { ok: true };
+  }
+
+  function atribuir(iso, turnoId, cid, atividade, grupo = '') {
+    const apoio = grupoApoio(cid, grupo);
+    const cf = conflitos(cid, iso, turnoId);
+    if (cf.length) return { ok: false, msg: msgConflito(cid, cf[0]) };
+    const outros = turnosDoColab(iso, cid).filter((x) => x.turnoId !== turnoId);
+    const divergente = outros.find((x) => x.apoio !== apoio);
+    if (divergente) {
+      const atual = divergente.apoio ? `apoiando o grupo "${nomeGrupo(divergente.apoio)}"` : 'trabalhando no próprio grupo';
+      return { ok: false, msg: `${nomeColab(cid)} já está ${atual} em ${fmtDataCurta(iso)}. O apoio a outro grupo só é possível no dia de folga do grupo de origem e por um único grupo no dia — ajuste o dia em "Editar dia".` };
+    }
+    const lim = checarApoio(cid, [...outros.map((x) => x.turnoId), turnoId], apoio);
+    if (!lim.ok) return lim;
+    const d = dia(iso, true);
+    if (!d.t[turnoId]) d.t[turnoId] = [];
+    const ex = d.t[turnoId].find((e) => e.c === cid);
+    const reg = ex || { c: cid };
+    reg.a = atividade;
+    if (apoio) reg.g = apoio; else delete reg.g;
+    if (!ex) d.t[turnoId].push(reg);
+    d.f = d.f.filter((x) => x !== cid);
+    return { ok: true };
   }
   const emFolga = (iso, cid) => !!dia(iso)?.f.includes(cid);
   /** Folga = marcada com "F" ou (configuração padrão) dia com escala lançada em que a pessoa não tem turno */
@@ -1341,16 +1418,6 @@ const Escala = (() => {
   }
   const msgConflito = (cid, cf) => `${nomeColab(cid)} já está no turno ${cf.turno.nome} de ${fmtDataCurta(cf.iso)} (${cf.turno.inicio}–${cf.turno.fim}) no mesmo horário. Uma pessoa não pode estar em dois trabalhos ao mesmo tempo.`;
 
-  function atribuir(iso, turnoId, cid, atividade) {
-    const cf = conflitos(cid, iso, turnoId);
-    if (cf.length) return { ok: false, msg: msgConflito(cid, cf[0]) };
-    const d = dia(iso, true);
-    if (!d.t[turnoId]) d.t[turnoId] = [];
-    const ex = d.t[turnoId].find((e) => e.c === cid);
-    if (ex) ex.a = atividade; else d.t[turnoId].push({ c: cid, a: atividade });
-    d.f = d.f.filter((x) => x !== cid);
-    return { ok: true };
-  }
   function remover(iso, turnoId, cid) {
     const d = dia(iso);
     if (!d || !d.t[turnoId]) return;
@@ -1374,8 +1441,11 @@ const Escala = (() => {
   }
 
   /** Define o dia inteiro de um colaborador (turnos selecionados ou folga), validando simultaneidade */
-  function definirDia(iso, cid, selecao, folga) {
+  function definirDia(iso, cid, selecao, folga, grupo = '') {
     if (folga && selecao.length) return { ok: false, msg: 'Escolha turnos OU folga para o dia, não os dois.' };
+    const apoio = grupoApoio(cid, grupo);
+    const lim = checarApoio(cid, selecao.map((s) => s.turnoId), apoio);
+    if (!lim.ok) return lim;
     for (let i = 0; i < selecao.length; i++) {
       for (let j = i + 1; j < selecao.length; j++) {
         const [a1, b1] = intervalo(iso, turno(selecao[i].turnoId));
@@ -1387,7 +1457,7 @@ const Escala = (() => {
     }
     limparDiaColab(iso, cid);
     if (folga) definirFolga(iso, cid, true);
-    for (const s of selecao) atribuir(iso, s.turnoId, cid, s.atividade);
+    for (const s of selecao) atribuir(iso, s.turnoId, cid, s.atividade, apoio);
     return { ok: true };
   }
 
@@ -1428,6 +1498,7 @@ const Escala = (() => {
 
   return {
     dia, turnosDoColab, emFolga, ehFolga, turnoPadraoDe, intervalo, conflitos, atribuir, remover, definirFolga, limparDiaColab,
+    grupoApoio, trabalhoTurno, limiteApoioMin,
     definirDia, usoColaborador, removerColaborador, usoTurno, removerTurno, copiarSemana, limparPeriodo,
   };
 })();
@@ -2068,9 +2139,11 @@ const UI = (() => {
     const chips = its.map((x) => {
       const t = turnoPorId(x.turnoId);
       const outra = x.atividade !== c.atividade ? ` · ${atividadeNome(x.atividade)}` : '';
+      const apoio = x.apoio ? ` · apoio ao ${Equipes.nome(x.apoio)}` : '';
+      const cls = x.apoio ? ' chip-apoio' : '';
       return detalhado
-        ? `<span class="chip chip-largo" style="--cor:${t.cor}" title="${esc(t.nome)} ${t.inicio}–${t.fim}${esc(outra)}">${esc(t.sigla)} <small>${t.inicio}–${t.fim}${esc(outra)}</small></span>`
-        : `<span class="chip" style="--cor:${t.cor}" title="${esc(t.nome)} ${t.inicio}–${t.fim}${esc(outra)}">${esc(t.sigla)}${outra ? '*' : ''}</span>`;
+        ? `<span class="chip chip-largo${cls}" style="--cor:${t.cor}" title="${esc(t.nome)} ${t.inicio}–${t.fim}${esc(outra)}${esc(apoio)}">${esc(t.sigla)} <small>${t.inicio}–${t.fim}${esc(outra)}${esc(apoio)}</small></span>`
+        : `<span class="chip${cls}" style="--cor:${t.cor}" title="${esc(t.nome)} ${t.inicio}–${t.fim}${esc(outra)}${esc(apoio)}">${esc(t.sigla)}${outra ? '*' : ''}</span>`;
     }).join('');
     const titulo = alertas.map((a) => `${ROTULO_NIVEL[a.nivel]}: ${a.regra}`).join('\n');
     const destaque = ui.destaque && ui.destaque.cid === c.id && ui.destaque.iso === iso ? ' destaque' : '';
@@ -2132,7 +2205,11 @@ const UI = (() => {
         const iniciado = !!E().escala[iso];
         return `<td class="cel cel-turno ${diaSemana(d) === 0 ? 'dom' : ''} ${iniciado && n < t.minimo ? 'falta' : ''}" data-acao="celulaTurno" data-t="${t.id}" data-d="${iso}" tabindex="0">
           <span class="contagem">${n}/${t.minimo}</span>
-          ${lst.map((e) => { const c = colabPorId(e.c); return `<span class="nome-chip" style="--cor:${t.cor}" title="${esc(c?.nome)} · ${esc(atividadeNome(e.a))}">${esc(U.primeiroNome(c?.nome))}${e.a !== 'ordenha' ? ` <small>${esc(atividadeNome(e.a).split(' ')[0])}</small>` : ''}</span>`; }).join('')}
+          ${lst.map((e) => {
+            const c = colabPorId(e.c);
+            const apoio = Escala.grupoApoio(e.c, e.g);
+            return `<span class="nome-chip${apoio ? ' apoio' : ''}" style="--cor:${t.cor}" title="${esc(c?.nome)} · ${esc(atividadeNome(e.a))}${apoio ? ` · apoio ao ${esc(Equipes.nome(apoio))} (folga no ${esc(Equipes.nome(c?.equipeId))})` : ''}">${apoio ? '⇄ ' : ''}${esc(U.primeiroNome(c?.nome))}${e.a !== 'ordenha' ? ` <small>${esc(atividadeNome(e.a).split(' ')[0])}</small>` : ''}</span>`;
+          }).join('')}
         </td>`;
       }).join('')}</tr>`).join('');
     const folgas = `<tr><th class="col-nome" scope="row"><span class="chip-folga">F</span> <strong>Folgas</strong></th>${dias.map((d) => {
@@ -2177,7 +2254,8 @@ const UI = (() => {
       <div class="legenda">${est.turnos.map((t) => `<span><span class="chip" style="--cor:${t.cor}">${esc(t.sigla)}</span> ${esc(t.nome)} ${t.inicio}–${t.fim}</span>`).join('')}
         <span><span class="chip-folga">F</span> Folga marcada</span><span><span class="chip-folga implicita">F</span> Sem turno = folga</span><span><span class="cont-noite">↳02h</span> continuação do turno da véspera</span>
         <span><span class="marca-alerta marca-vermelho"></span> possível irregularidade</span><span><span class="marca-alerta marca-amarelo"></span> atenção</span>
-        <span>* atividade diferente da habitual</span></div>
+        <span>* atividade diferente da habitual</span>
+        <span><span class="chip chip-apoio" style="--cor:#8a8f7a">T</span> apoio a outro grupo na folga (até ${fmtHoras(Escala.limiteApoioMin())}/dia)</span></div>
       <div class="grade-wrap" id="gradeEscala">${modoTurno ? gradeTurnos(dias) : gradeColaboradores(dias)}</div>`;
   };
 
@@ -2207,7 +2285,9 @@ const UI = (() => {
     if (!t) return;
     if (Escala.turnosDoColab(iso, cid).some((x) => x.turnoId === p)) { Escala.remover(iso, p, cid); commit(); return; }
     const ativ = (t.atividades || []).includes(c.atividade) || !(t.atividades || []).length ? c.atividade : t.atividades[0];
-    const r = Escala.atribuir(iso, p, cid, ativ);
+    // Se o dia já é de apoio a outro grupo, o novo turno segue o mesmo grupo
+    const grupoDia = Escala.turnosDoColab(iso, cid)[0]?.apoio || '';
+    const r = Escala.atribuir(iso, p, cid, ativ, grupoDia);
     if (!r.ok) { toast(r.msg, 'erro'); return; }
     commit();
   }
@@ -2218,23 +2298,30 @@ const UI = (() => {
     const folga = Escala.emFolga(iso, cid);
     const alertas = mapaAlertas.get(`${cid}|${iso}`) || [];
     const ativOpts = E().config.atividades.map((a) => [a.id, a.nome]);
+    const outrosGrupos = E().equipes.filter((e) => e.id !== c.equipeId);
+    const apoioAtual = its.find((x) => x.apoio)?.apoio || '';
+    const limApoio = Escala.limiteApoioMin();
+    const grupoOpts = [['', c.equipeId ? `Próprio grupo — ${Equipes.nome(c.equipeId)}` : 'Próprio grupo (sem equipe)'],
+      ...outrosGrupos.map((e) => [e.id, `Apoio ao ${e.nome} (folga no grupo de origem)`])];
     Modal.abrir({
       titulo: `${esc(c.nome)} — ${U.NOMES_DIAS[diaSemana(isoParaDia(iso))]}, ${fmtData(iso)}`,
       largo: true,
       corpo: `
         <label class="check check-grande"><input type="checkbox" id="eFolga"${folga ? ' checked' : ''}> <span class="chip-folga">F</span> Folga neste dia</label>
+        ${outrosGrupos.length ? `<div class="apoio-grupo">
+          <label class="campo">Trabalhar neste dia pelo grupo<select id="eGrupo">${opcoes(grupoOpts, apoioAtual)}</select></label>
+          <p class="dica" id="eApoioDica">No dia de folga do grupo de origem, o colaborador pode apoiar outro grupo com jornada de até ${fmtHoras(limApoio)}. <span id="eApoioTotal"></span></p>
+        </div>` : ''}
         <div id="eTurnos" class="lista-turnos">
           ${E().turnos.map((t) => {
             const sel = its.find((x) => x.turnoId === t.id);
             const cf = Escala.conflitos(cid, iso, t.id, true);
-            const eq = c.equipeId ? E().equipes.find((e) => e.id === c.equipeId) : null;
-            const naoHab = eq && !(eq.turnos || []).includes(t.id);
-            return `<div class="linha-turno">
+            return `<div class="linha-turno" data-t="${t.id}">
               <label class="check"><input type="checkbox" name="eTurno" value="${t.id}"${sel ? ' checked' : ''}${cf.length ? ' disabled' : ''}>
-                <span class="chip" style="--cor:${t.cor}">${esc(t.sigla)}</span> <strong>${esc(t.nome)}</strong> <span class="sub">${t.inicio}–${t.fim}${U.atravessaMeiaNoite(t) ? ' (dia seguinte)' : ''} · ${fmtHoras(U.duracaoTurno(t) - (Number(t.intervaloMin) || 0))}</span></label>
+                <span class="chip" style="--cor:${t.cor}">${esc(t.sigla)}</span> <strong>${esc(t.nome)}</strong> <span class="sub">${t.inicio}–${t.fim}${U.atravessaMeiaNoite(t) ? ' (dia seguinte)' : ''} · ${fmtHoras(Escala.trabalhoTurno(t))}</span></label>
               <select name="eAtiv" data-t="${t.id}" aria-label="Atividade no turno ${esc(t.nome)}">${opcoes(ativOpts, sel ? sel.atividade : c.atividade)}</select>
               ${cf.length ? `<span class="nota nota-vermelho">Indisponível: já está no ${esc(cf[0].turno.nome)} de ${fmtDataCurta(cf[0].iso)} no mesmo horário</span>` : ''}
-              ${naoHab ? '<span class="nota nota-amarelo">Turno não habilitado para a equipe deste colaborador</span>' : ''}
+              <span class="nota nota-amarelo nota-hab" hidden></span>
             </div>`;
           }).join('')}
         </div>
@@ -2243,9 +2330,26 @@ const UI = (() => {
         const sync = () => {
           const f = $('#eFolga', m).checked;
           $$('input[name="eTurno"]', m).forEach((i) => { if (f) i.checked = false; i.closest('.linha-turno').classList.toggle('desativada', f); });
+          // Habilitação do turno conforme o grupo escolhido para o dia
+          const gid = $('#eGrupo', m)?.value || '';
+          const eq = E().equipes.find((e) => e.id === (gid || c.equipeId));
+          $$('.linha-turno', m).forEach((l) => {
+            const nota = $('.nota-hab', l);
+            const naoHab = eq && !(eq.turnos || []).includes(l.dataset.t);
+            nota.hidden = !naoHab;
+            nota.textContent = naoHab ? `Turno não habilitado para o ${eq.nome}` : '';
+          });
+          // Total de horas do dia no apoio
+          const total = $$('input[name="eTurno"]:checked', m).reduce((s, i) => s + Escala.trabalhoTurno(turnoPorId(i.value)), 0);
+          const alvo = $('#eApoioTotal', m);
+          if (alvo) {
+            alvo.textContent = gid ? `Selecionado: ${fmtHoras(total)}${total > limApoio ? ' — acima do limite.' : '.'}` : '';
+            alvo.className = gid && total > limApoio ? 'txt-vermelho' : '';
+          }
         };
         $('#eFolga', m).addEventListener('change', sync);
-        $$('input[name="eTurno"]', m).forEach((i) => i.addEventListener('change', () => { if (i.checked) { $('#eFolga', m).checked = false; sync(); } }));
+        $('#eGrupo', m)?.addEventListener('change', () => { if ($('#eGrupo', m).value) $('#eFolga', m).checked = false; sync(); });
+        $$('input[name="eTurno"]', m).forEach((i) => i.addEventListener('change', () => { if (i.checked) $('#eFolga', m).checked = false; sync(); }));
         sync();
       },
       botoes: [
@@ -2255,7 +2359,7 @@ const UI = (() => {
           rotulo: 'Aplicar', classe: 'btn-pri',
           acao: () => {
             const selecao = $$('input[name="eTurno"]:checked').map((i) => ({ turnoId: i.value, atividade: $(`select[name="eAtiv"][data-t="${i.value}"]`).value }));
-            const r = Escala.definirDia(iso, cid, selecao, $('#eFolga').checked);
+            const r = Escala.definirDia(iso, cid, selecao, $('#eFolga').checked, $('#eGrupo')?.value || '');
             if (!r.ok) { toast(r.msg, 'erro'); return false; }
             commit();
             return true;
@@ -2269,23 +2373,33 @@ const UI = (() => {
     const t = turnoPorId(tid);
     const atuais = E().escala[iso]?.t[tid] || [];
     const ativOpts = E().config.atividades.map((a) => [a.id, a.nome]);
+    const habNo = (eid) => { const eq = E().equipes.find((e) => e.id === eid); return !eq || (eq.turnos || []).includes(tid); };
     const lista = colabsOrdenados(true).map((c) => {
-      const eq = c.equipeId ? E().equipes.find((e) => e.id === c.equipeId) : null;
-      const hab = !eq || (eq.turnos || []).includes(tid);
+      const hab = habNo(c.equipeId);
       const cf = Escala.conflitos(c.id, iso, tid);
       const sel = atuais.find((e) => e.c === c.id);
-      return { c, hab, cf, sel, folga: Escala.emFolga(iso, c.id) };
+      const outros = Escala.turnosDoColab(iso, c.id).filter((x) => x.turnoId !== tid);
+      // Grupo sugerido: o já gravado; senão, se for folga no grupo de origem e o próprio grupo não
+      // atende este turno, o primeiro outro grupo habilitado (apoio na folga)
+      let grupo = sel ? Escala.grupoApoio(c.id, sel.g) : (outros[0]?.apoio || '');
+      if (!sel && !outros.length && !hab) grupo = E().equipes.find((e) => e.id !== c.equipeId && habNo(e.id))?.id || '';
+      const grupos = [['', `Próprio grupo${c.equipeId ? ` — ${Equipes.nome(c.equipeId)}` : ''}`],
+        ...E().equipes.filter((e) => e.id !== c.equipeId).map((e) => [e.id, `Apoio ao ${e.nome}`])];
+      return { c, hab, cf, sel, folga: Escala.emFolga(iso, c.id), grupo, grupos };
     }).sort((a, b) => (b.sel ? 1 : 0) - (a.sel ? 1 : 0) || (b.hab ? 1 : 0) - (a.hab ? 1 : 0) || (a.cf.length - b.cf.length));
     Modal.abrir({
       titulo: `${esc(t.nome)} (${t.inicio}–${t.fim}) — ${U.NOMES_DIAS[diaSemana(isoParaDia(iso))]}, ${fmtData(iso)}`,
       largo: true,
-      corpo: `<p class="sub">Mínimo configurado: ${t.minimo}. Selecione quem trabalha neste turno.</p>
-        <div class="lista-turnos">${lista.map(({ c, hab, cf, sel, folga }) => `<div class="linha-turno${cf.length ? ' desativada' : ''}">
+      corpo: `<p class="sub">Mínimo configurado: ${t.minimo}. Selecione quem trabalha neste turno. Na folga do grupo de origem, o colaborador pode apoiar outro grupo com jornada de até ${fmtHoras(Escala.limiteApoioMin())} no dia.</p>
+        <div class="lista-turnos">${lista.map(({ c, hab, cf, sel, folga, grupo, grupos }) => `<div class="linha-turno${cf.length ? ' desativada' : ''}">
           <label class="check"><input type="checkbox" name="tcColab" value="${c.id}"${sel ? ' checked' : ''}${cf.length ? ' disabled' : ''}> <strong>${esc(c.nome)}</strong> <span class="sub">${esc(Equipes.nome(c.equipeId))}</span></label>
-          <select name="tcAtiv" data-c="${c.id}" aria-label="Atividade de ${esc(c.nome)}">${opcoes(ativOpts, sel ? sel.a : c.atividade)}</select>
+          <div class="linha-turno-campos">
+            ${grupos.length > 1 ? `<select name="tcGrupo" data-c="${c.id}" aria-label="Grupo de ${esc(c.nome)} neste turno">${opcoes(grupos, grupo)}</select>` : ''}
+            <select name="tcAtiv" data-c="${c.id}" aria-label="Atividade de ${esc(c.nome)}">${opcoes(ativOpts, sel ? sel.a : c.atividade)}</select>
+          </div>
           ${cf.length ? `<span class="nota nota-vermelho">Já está no ${esc(cf[0].turno.nome)} de ${fmtDataCurta(cf[0].iso)}</span>` : ''}
           ${folga ? '<span class="nota nota-amarelo">Está de folga — ao selecionar, a folga será retirada</span>' : ''}
-          ${!hab ? '<span class="nota nota-amarelo">Equipe não habilitada para este turno</span>' : ''}
+          ${!hab ? '<span class="nota nota-amarelo">Equipe de origem não habilitada para este turno</span>' : ''}
         </div>`).join('') || '<span class="sub">Nenhum colaborador ativo.</span>'}</div>`,
       botoes: [
         { rotulo: 'Cancelar', classe: 'btn-sec' },
@@ -2296,7 +2410,7 @@ const UI = (() => {
             for (const e of [...atuais]) if (!sel.includes(e.c)) Escala.remover(iso, tid, e.c);
             const erros = [];
             for (const cid of sel) {
-              const r = Escala.atribuir(iso, tid, cid, $(`select[name="tcAtiv"][data-c="${cid}"]`).value);
+              const r = Escala.atribuir(iso, tid, cid, $(`select[name="tcAtiv"][data-c="${cid}"]`).value, $(`select[name="tcGrupo"][data-c="${cid}"]`)?.value || '');
               if (!r.ok) erros.push(r.msg);
             }
             commit();
@@ -2525,10 +2639,10 @@ const UI = (() => {
       <tbody>${colabs.map((c) => `<tr><td>${esc(c.nome)}</td>${dias.map((d) => {
         const iso = diaParaIso(d);
         const its = Escala.turnosDoColab(iso, c.id);
-        if (its.length) return `<td class="${diaSemana(d) === 0 ? 'dom' : ''}">${its.map((x) => { const t = turnoPorId(x.turnoId); return `<span class="chip chip-print" style="--cor:${t.cor}">${esc(t.sigla)}</span>`; }).join('')}</td>`;
+        if (its.length) return `<td class="${diaSemana(d) === 0 ? 'dom' : ''}">${its.map((x) => { const t = turnoPorId(x.turnoId); return `<span class="chip chip-print${x.apoio ? ' chip-apoio' : ''}" style="--cor:${t.cor}"${x.apoio ? ` title="Apoio ao ${esc(Equipes.nome(x.apoio))}"` : ''}>${esc(t.sigla)}</span>`; }).join('')}</td>`;
         return `<td class="${diaSemana(d) === 0 ? 'dom' : ''}">${Escala.ehFolga(iso, c.id) ? '<span class="chip-folga">F</span>' : ''}</td>`;
       }).join('')}<td class="num">${fmtHoras(minutosPeriodo(c.id, dias[0], dias[dias.length - 1]))}</td><td class="num">${dias.filter((d) => Escala.ehFolga(diaParaIso(d), c.id)).length}</td></tr>`).join('') || `<tr><td colspan="${dias.length + 3}" class="vazio">Sem colaboradores.</td></tr>`}</tbody></table>
-      <p class="legenda-rel">${E().turnos.map((t) => `<span class="chip chip-print" style="--cor:${t.cor}">${esc(t.sigla)}</span> ${esc(t.nome)} (${t.inicio}–${t.fim})`).join(' · ')} · <span class="chip-folga">F</span> Folga</p>`;
+      <p class="legenda-rel">${E().turnos.map((t) => `<span class="chip chip-print" style="--cor:${t.cor}">${esc(t.sigla)}</span> ${esc(t.nome)} (${t.inicio}–${t.fim})`).join(' · ')} · <span class="chip-folga">F</span> Folga · <span class="chip chip-print chip-apoio" style="--cor:#8a8f7a">T</span> Apoio a outro grupo na folga</p>`;
   }
 
   function conteudoRelatorio() {
@@ -2628,6 +2742,7 @@ const UI = (() => {
         <div class="card-cab"><h2>Parâmetros de jornada e descanso</h2></div>
         <div class="form-grid form-grid-3">
           <label class="campo">Limite normal diário (horas)<input type="number" step="0.5" min="1" max="24" data-cfg="limiteDiarioH" data-tipo="num" value="${c.limiteDiarioH}"></label>
+          <label class="campo">Limite diário no apoio a outro grupo, na folga (horas)<input type="number" step="0.5" min="1" max="24" data-cfg="limiteApoioH" data-tipo="num" value="${c.limiteApoioH}"></label>
           <label class="campo">Intervalo mínimo entre jornadas (horas)<input type="number" step="0.5" min="0" max="48" data-cfg="interjornadaH" data-tipo="num" value="${c.interjornadaH}"></label>
           <label class="campo">Máximo de dias consecutivos de trabalho<input type="number" min="1" max="14" data-cfg="maxDiasConsecutivos" data-tipo="num" value="${c.maxDiasConsecutivos}"></label>
           <label class="campo">Semana considerada<select data-cfg="inicioSemana" data-tipo="num">${opcoes([[1, 'Segunda a domingo'], [0, 'Domingo a sábado']], c.inicioSemana)}</select></label>

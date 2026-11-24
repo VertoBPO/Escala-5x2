@@ -316,6 +316,15 @@ td .sub, th .sub { display: block; }
 .cel-turno.falta .contagem { color: var(--amarelo); }
 .nome-chip { display: block; padding: 2px 5px; margin: 1px 0; border-left: 3px solid var(--cor, #999); background: #f6f7f1; border-radius: 3px; font-size: .74rem; white-space: nowrap; }
 .nome-chip.folga { border-left: 3px dashed var(--oliva); }
+.nome-chip.apoio { background: var(--dourado-claro); font-weight: 600; }
+
+/* Apoio a outro grupo no dia de folga do grupo de origem */
+.chip-apoio { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--dourado); margin: 3px; }
+.apoio-grupo { padding: 10px 12px; border: 1px solid #e5cf93; background: var(--dourado-claro); border-radius: 8px; }
+.apoio-grupo .campo { max-width: 420px; }
+.apoio-grupo .dica { margin-top: 6px; }
+.linha-turno-campos { display: flex; flex-direction: column; gap: 4px; }
+.linha-turno-campos select { width: 100%; }
 .nome-chip small { color: var(--texto-3); }
 
 /* ------------------------------ Modais ------------------------------ */
