@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Gestão, montagem e validação de escalas de trabalho 5x2 para propriedade rural com ordenha.">
+  <title>Escala 5x2 — Gestão e Validação</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <!-- Menu lateral -->
+    <aside class="sidebar" id="sidebar" aria-label="Menu principal">
+      <div class="marca">
+        <div class="marca-icone" aria-hidden="true">5x2</div>
+        <div class="marca-texto">
+          <strong>Escala 5x2</strong>
+          <small id="nomePropriedade">Gestão e validação</small>
+        </div>
+      </div>
+      <nav class="nav">
+        <button class="nav-item ativo" data-acao="navegar" data-pagina="visao"><span class="nav-num">1</span>Visão geral</button>
+        <button class="nav-item" data-acao="navegar" data-pagina="colaboradores"><span class="nav-num">2</span>Colaboradores</button>
+        <button class="nav-item" data-acao="navegar" data-pagina="equipes"><span class="nav-num">3</span>Equipes</button>
+        <button class="nav-item" data-acao="navegar" data-pagina="turnos"><span class="nav-num">4</span>Turnos</button>
+        <button class="nav-item" data-acao="navegar" data-pagina="escala"><span class="nav-num">5</span>Montagem da escala</button>
+        <button class="nav-item" data-acao="navegar" data-pagina="validacao"><span class="nav-num">6</span>Validação trabalhista <span class="badge" id="badgeAlertas"></span></button>
+        <button class="nav-item" data-acao="navegar" data-pagina="relatorios"><span class="nav-num">7</span>Relatórios</button>
+        <button class="nav-item" data-acao="navegar" data-pagina="config"><span class="nav-num">8</span>Configurações</button>
+      </nav>
+      <p class="sidebar-rodape">Ferramenta de apoio à organização e conferência da jornada. Não é garantia nem certificação de conformidade jurídica.</p>
+    </aside>
+    <div class="sidebar-fundo" data-acao="alternarMenu" aria-hidden="true"></div>
+
+    <!-- Conteúdo -->
+    <div class="conteudo">
+      <header class="topo">
+        <button class="btn-menu" data-acao="alternarMenu" aria-label="Abrir menu">☰</button>
+        <h1 id="tituloPagina">Visão geral</h1>
+        <div class="periodo" role="group" aria-label="Mês de referência">
+          <button class="btn-icone" data-acao="mesAnterior" aria-label="Mês anterior">‹</button>
+          <select id="selMes" data-change="mudarMes" aria-label="Mês"></select>
+          <input id="inpAno" type="number" min="2000" max="2100" data-change="mudarAno" aria-label="Ano">
+          <button class="btn-icone" data-acao="mesSeguinte" aria-label="Próximo mês">›</button>
+        </div>
+        <span class="status-salvo" id="statusSalvo" aria-live="polite"></span>
+      </header>
+
+      <div id="faixaExemplo" class="faixa-exemplo" hidden></div>
+
+      <main id="paginas">
+        <section class="pagina" id="pg-visao"></section>
+        <section class="pagina" id="pg-colaboradores" hidden></section>
+        <section class="pagina" id="pg-equipes" hidden></section>
+        <section class="pagina" id="pg-turnos" hidden></section>
+        <section class="pagina" id="pg-escala" hidden></section>
+        <section class="pagina" id="pg-validacao" hidden></section>
+        <section class="pagina" id="pg-relatorios" hidden></section>
+        <section class="pagina" id="pg-config" hidden></section>
+      </main>
+    </div>
+  </div>
+
+  <!-- Camadas auxiliares -->
+  <div id="modalRaiz"></div>
+  <div id="toasts" aria-live="polite"></div>
+  <div id="printRaiz"></div>
+
+  <noscript><p class="noscript">Este sistema precisa do JavaScript habilitado no navegador.</p></noscript>
+  <script src="script.js"></script>
+</body>
+</html>
