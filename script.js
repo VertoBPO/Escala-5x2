@@ -2721,6 +2721,11 @@ const UI = (() => {
   const ACOES = {
     navegar: (el) => { ui.pagina = el.dataset.pagina; document.body.classList.remove('menu-aberto'); renderTudo(); window.scrollTo(0, 0); },
     alternarMenu: () => document.body.classList.toggle('menu-aberto'),
+    recolherMenu: () => {
+      const recolhida = document.documentElement.classList.toggle('sidebar-recolhida');
+      sincronizarBotaoRecolher();
+      try { localStorage.setItem('escala5x2-sidebar', recolhida ? 'recolhida' : 'expandida'); } catch { /* armazenamento indisponível */ }
+    },
     mesAnterior: () => { ui.mes--; if (ui.mes < 1) { ui.mes = 12; ui.ano--; } mudouMes(); },
     mesSeguinte: () => { ui.mes++; if (ui.mes > 12) { ui.mes = 1; ui.ano++; } mudouMes(); },
 
@@ -2991,7 +2996,18 @@ const UI = (() => {
   }
 
   /* =============================== EVENTOS =============================== */
+  function sincronizarBotaoRecolher() {
+    const btn = $('.btn-recolher');
+    if (!btn) return;
+    const recolhida = document.documentElement.classList.contains('sidebar-recolhida');
+    const rotulo = recolhida ? 'Expandir menu' : 'Recolher menu';
+    btn.setAttribute('aria-expanded', String(!recolhida));
+    btn.title = rotulo;
+    btn.querySelector('.nav-rot').textContent = rotulo;
+  }
+
   function ligarEventos() {
+    sincronizarBotaoRecolher();
     document.addEventListener('click', (ev) => {
       if (ev.target.closest('#modalRaiz') && !ev.target.closest('[data-acao]')) return;
       const el = ev.target.closest('[data-acao]');

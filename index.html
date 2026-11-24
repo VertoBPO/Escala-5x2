@@ -6,6 +6,7 @@
   <meta name="description" content="Gestão, montagem e validação de escalas de trabalho 5x2 para propriedade rural com ordenha.">
   <title>Escala 5x2 — Gestão e Validação</title>
   <link rel="stylesheet" href="style.css">
+  <script>try { if (localStorage.getItem('escala5x2-sidebar') === 'recolhida') document.documentElement.classList.add('sidebar-recolhida'); } catch (e) {}</script>
 </head>
 <body>
   <div class="app">
@@ -19,15 +20,18 @@
         </div>
       </div>
       <nav class="nav">
-        <button class="nav-item ativo" data-acao="navegar" data-pagina="visao"><span class="nav-num">1</span>Visão geral</button>
-        <button class="nav-item" data-acao="navegar" data-pagina="colaboradores"><span class="nav-num">2</span>Colaboradores</button>
-        <button class="nav-item" data-acao="navegar" data-pagina="equipes"><span class="nav-num">3</span>Equipes</button>
-        <button class="nav-item" data-acao="navegar" data-pagina="turnos"><span class="nav-num">4</span>Turnos</button>
-        <button class="nav-item" data-acao="navegar" data-pagina="escala"><span class="nav-num">5</span>Montagem da escala</button>
-        <button class="nav-item" data-acao="navegar" data-pagina="validacao"><span class="nav-num">6</span>Validação trabalhista <span class="badge" id="badgeAlertas"></span></button>
-        <button class="nav-item" data-acao="navegar" data-pagina="relatorios"><span class="nav-num">7</span>Relatórios</button>
-        <button class="nav-item" data-acao="navegar" data-pagina="config"><span class="nav-num">8</span>Configurações</button>
+        <button class="nav-item ativo" data-acao="navegar" data-pagina="visao" title="Visão geral"><span class="nav-num">1</span><span class="nav-rot">Visão geral</span></button>
+        <button class="nav-item" data-acao="navegar" data-pagina="colaboradores" title="Colaboradores"><span class="nav-num">2</span><span class="nav-rot">Colaboradores</span></button>
+        <button class="nav-item" data-acao="navegar" data-pagina="equipes" title="Equipes"><span class="nav-num">3</span><span class="nav-rot">Equipes</span></button>
+        <button class="nav-item" data-acao="navegar" data-pagina="turnos" title="Turnos"><span class="nav-num">4</span><span class="nav-rot">Turnos</span></button>
+        <button class="nav-item" data-acao="navegar" data-pagina="escala" title="Montagem da escala"><span class="nav-num">5</span><span class="nav-rot">Montagem da escala</span></button>
+        <button class="nav-item" data-acao="navegar" data-pagina="validacao" title="Validação trabalhista"><span class="nav-num">6</span><span class="nav-rot">Validação trabalhista</span><span class="badge" id="badgeAlertas"></span></button>
+        <button class="nav-item" data-acao="navegar" data-pagina="relatorios" title="Relatórios"><span class="nav-num">7</span><span class="nav-rot">Relatórios</span></button>
+        <button class="nav-item" data-acao="navegar" data-pagina="config" title="Configurações"><span class="nav-num">8</span><span class="nav-rot">Configurações</span></button>
       </nav>
+      <button class="btn-recolher" data-acao="recolherMenu" aria-expanded="true" aria-controls="sidebar" title="Recolher menu">
+        <span class="btn-recolher-ico" aria-hidden="true">«</span><span class="nav-rot">Recolher menu</span>
+      </button>
       <p class="sidebar-rodape">Ferramenta de apoio à organização e conferência da jornada. Não é garantia nem certificação de conformidade jurídica.</p>
     </aside>
     <div class="sidebar-fundo" data-acao="alternarMenu" aria-hidden="true"></div>

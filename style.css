@@ -72,6 +72,30 @@ code { background: var(--oliva-claro); padding: 1px 5px; border-radius: 4px; fon
 .nav-item.ativo .nav-num { background: var(--dourado); color: var(--oliva-escuro); }
 .sidebar-rodape { margin-top: auto; padding: 16px 18px; font-size: .75rem; color: #a3ab8a; border-top: 1px solid rgba(255, 255, 255, .08); }
 .sidebar-fundo { display: none; }
+.nav-item { position: relative; }
+.nav-rot { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+
+/* Botão recolher/expandir (somente telas largas) */
+.btn-recolher {
+  display: flex; align-items: center; gap: 10px; margin: 8px 10px 0; padding: 9px 12px; border: 0; border-radius: 8px;
+  background: rgba(255, 255, 255, .06); color: #dde2cc; cursor: pointer; font-size: .88rem; text-align: left;
+}
+.btn-recolher:hover { background: rgba(255, 255, 255, .12); color: #fff; }
+.btn-recolher-ico { width: 22px; text-align: center; font-size: 1.1rem; line-height: 1; flex-shrink: 0; transition: transform .25s; }
+
+.sidebar { transition: width .25s ease; }
+.sidebar-recolhida { --sidebar: 68px; }
+.sidebar-recolhida .sidebar { overflow-x: hidden; }
+.sidebar-recolhida .marca { justify-content: center; padding: 20px 0 18px; }
+.sidebar-recolhida .marca-texto,
+.sidebar-recolhida .sidebar .nav-rot,
+.sidebar-recolhida .sidebar-rodape { display: none; }
+.sidebar-recolhida .nav-item { justify-content: center; padding: 10px 0; }
+.sidebar-recolhida .nav-item .badge {
+  position: absolute; top: 2px; right: 4px; margin: 0; min-width: 18px; padding: 0 5px; font-size: .66rem; line-height: 16px;
+}
+.sidebar-recolhida .btn-recolher { justify-content: center; padding: 9px 0; margin-bottom: 12px; }
+.sidebar-recolhida .btn-recolher-ico { transform: rotate(180deg); }
 
 .badge { margin-left: auto; min-width: 22px; padding: 1px 7px; border-radius: 999px; font-size: .74rem; font-weight: 700; text-align: center; }
 .badge-vermelho { background: var(--vermelho); color: #fff; }
@@ -389,6 +413,15 @@ td .sub, th .sub { display: block; }
   .grid-2 { grid-template-columns: 1fr; }
 }
 @media (max-width: 860px) {
+  /* No celular o menu é gaveta (☰): o modo recolhido não se aplica */
+  .btn-recolher { display: none; }
+  .sidebar-recolhida { --sidebar: 248px; }
+  .sidebar-recolhida .marca { justify-content: flex-start; padding: 20px 18px 18px; }
+  .sidebar-recolhida .marca-texto { display: block; }
+  .sidebar-recolhida .sidebar .nav-rot { display: inline; }
+  .sidebar-recolhida .sidebar-rodape { display: block; }
+  .sidebar-recolhida .nav-item { justify-content: flex-start; padding: 10px 12px; }
+  .sidebar-recolhida .nav-item .badge { position: static; margin-left: auto; }
   .sidebar { position: fixed; left: 0; top: 0; transform: translateX(-100%); transition: transform .25s; box-shadow: 4px 0 24px rgba(0, 0, 0, .2); }
   body.menu-aberto .sidebar { transform: translateX(0); }
   body.menu-aberto .sidebar-fundo { display: block; position: fixed; inset: 0; background: rgba(0, 0, 0, .35); z-index: 35; }
