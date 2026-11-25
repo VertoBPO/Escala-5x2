@@ -2245,6 +2245,7 @@ const UI = (() => {
       <div class="barra">
         <button class="btn btn-dourado" data-acao="sugerirEscala">✦ Sugerir escala…</button>
         <button class="btn" data-acao="copiarSemana">Copiar semana…</button>
+        <button class="btn" data-acao="marcarTodosTrabalhados" title="Escala cada colaborador no turno fixo em todos os dias do período; depois é só desmarcar as folgas">✓ Marcar ${ui.periodo === 'semana' ? 'semana' : 'mês'} como trabalhado…</button>
         <button class="btn" data-acao="limparMes">Limpar ${ui.periodo === 'semana' ? 'semana' : 'mês'}…</button>
         <button class="btn" data-acao="salvarPonto">Salvar ponto de restauração</button>
         <button class="btn" data-acao="restaurar">Recuperar escala salva…</button>
@@ -2895,6 +2896,38 @@ const UI = (() => {
     celulaTurno: (el) => abrirEditorTurno(el.dataset.t, el.dataset.d),
     sugerirEscala: () => abrirSugestao(),
     copiarSemana: () => abrirCopiarSemana(),
+    marcarTodosTrabalhados: async () => {
+      const dias = diasVisiveis();
+      const rot = ui.periodo === 'semana' ? `a semana de ${rotuloSemana(dias[0])}` : `${U.NOMES_MESES[ui.mes - 1]}/${ui.ano}`;
+      const colabs = colabsOrdenados(true)
+        .filter((c) => !ui.filtroEquipe || (ui.filtroEquipe === '_sem' ? !c.equipeId : c.equipeId === ui.filtroEquipe));
+      const alvo = colabs.filter((c) => Escala.turnoPadraoDe(c));
+      const semTurno = colabs.filter((c) => !Escala.turnoPadraoDe(c));
+      if (!alvo.length) {
+        toast('Nenhum colaborador ativo com turno fixo neste filtro. Defina o turno fixo do grupo em Equipes.', 'erro');
+        return;
+      }
+      const ok = await Modal.confirmar(`<p>Escalar <strong>${alvo.length} colaborador(es)</strong> no turno fixo em <strong>todos os dias</strong> de <strong>${rot}</strong>?</p>
+        <p class="sub">Dias que já têm turno não são alterados. Folgas marcadas (F) passam a dia trabalhado. Depois, com a ferramenta "Escalar no turno do grupo", clique nos dias para desmarcar as folgas.</p>
+        ${semTurno.length ? `<p class="sub">Sem turno fixo (não serão escalados): ${semTurno.map((c) => esc(c.nome)).join(', ')}.</p>` : ''}
+        <p class="sub">Um ponto de restauração será criado antes, para você poder desfazer.</p>`, { titulo: 'Marcar dias como trabalhados', rotulo: 'Marcar todos' });
+      if (!ok) return;
+      Store.criarPonto(`Antes de marcar todos os dias de ${rot}`);
+      let marcados = 0; const falhas = [];
+      for (const c of alvo) {
+        const t = turnoPorId(Escala.turnoPadraoDe(c));
+        const ativ = (t.atividades || []).includes(c.atividade) || !(t.atividades || []).length ? c.atividade : t.atividades[0];
+        for (const d of dias) {
+          const iso = diaParaIso(d);
+          if (Escala.turnosDoColab(iso, c.id).length) continue;
+          const r = Escala.atribuir(iso, t.id, c.id, ativ);
+          if (r.ok) marcados++; else falhas.push(r.msg);
+        }
+      }
+      ui.pincel = 'auto';
+      commit(`${marcados} dia(s) marcados como trabalhados. Clique nos dias de folga para desmarcá-los.`);
+      if (falhas.length) toast(`${falhas.length} dia(s) não foram marcados por conflito de horário. Ex.: ${falhas[0]}`, 'erro');
+    },
     limparMes: async () => {
       const dias = diasVisiveis();
       const rot = ui.periodo === 'semana' ? `a semana de ${rotuloSemana(dias[0])}` : `${U.NOMES_MESES[ui.mes - 1]}/${ui.ano}`;
