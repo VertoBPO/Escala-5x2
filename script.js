@@ -1360,6 +1360,29 @@ const Escala = (() => {
     return { ok: true };
   }
 
+  /**
+   * Grupo a usar ao escalar "cid" no turno "turnoId" sem escolha explícita:
+   * - se já trabalha no dia, segue o mesmo grupo (próprio ou apoiado);
+   * - se o turno é o turno fixo dele, é trabalho no próprio grupo;
+   * - senão, no dia de folga, é apoio ao grupo que tem esse turno como fixo
+   *   (de preferência um grupo da mesma atividade) ou, se o próprio grupo não
+   *   atende o turno, ao primeiro grupo habilitado para ele.
+   */
+  function grupoSugerido(iso, cid, turnoId) {
+    const c = colab(cid);
+    if (!c) return '';
+    const doDia = turnosDoColab(iso, cid).filter((x) => x.turnoId !== turnoId);
+    if (doDia.length) return doDia[0].apoio;
+    if (turnoPadraoDe(c) === turnoId) return '';
+    const outros = E().equipes.filter((e) => e.id !== c.equipeId);
+    const fixo = outros.filter((e) => e.turnoFixo === turnoId)
+      .sort((a, b) => ((b.atividade || 'ordenha') === c.atividade) - ((a.atividade || 'ordenha') === c.atividade))[0];
+    if (fixo) return fixo.id;
+    const proprio = E().equipes.find((e) => e.id === c.equipeId);
+    if (proprio && !(proprio.turnos || []).includes(turnoId)) return outros.find((e) => (e.turnos || []).includes(turnoId))?.id || '';
+    return '';
+  }
+
   function atribuir(iso, turnoId, cid, atividade, grupo = '') {
     const apoio = grupoApoio(cid, grupo);
     const cf = conflitos(cid, iso, turnoId);
@@ -1498,7 +1521,7 @@ const Escala = (() => {
 
   return {
     dia, turnosDoColab, emFolga, ehFolga, turnoPadraoDe, intervalo, conflitos, atribuir, remover, definirFolga, limparDiaColab,
-    grupoApoio, trabalhoTurno, limiteApoioMin,
+    grupoApoio, grupoSugerido, trabalhoTurno, limiteApoioMin,
     definirDia, usoColaborador, removerColaborador, usoTurno, removerTurno, copiarSemana, limparPeriodo,
   };
 })();
@@ -2286,11 +2309,11 @@ const UI = (() => {
     if (!t) return;
     if (Escala.turnosDoColab(iso, cid).some((x) => x.turnoId === p)) { Escala.remover(iso, p, cid); commit(); return; }
     const ativ = (t.atividades || []).includes(c.atividade) || !(t.atividades || []).length ? c.atividade : t.atividades[0];
-    // Se o dia já é de apoio a outro grupo, o novo turno segue o mesmo grupo
-    const grupoDia = Escala.turnosDoColab(iso, cid)[0]?.apoio || '';
-    const r = Escala.atribuir(iso, p, cid, ativ, grupoDia);
+    // Na folga, turno fixo de outro grupo = cobertura (apoio) daquele grupo
+    const grupo = Escala.grupoSugerido(iso, cid, p);
+    const r = Escala.atribuir(iso, p, cid, ativ, grupo);
     if (!r.ok) { toast(r.msg, 'erro'); return; }
-    commit();
+    commit(grupo ? `${c.nome} cobrindo o ${Equipes.nome(grupo)} em ${fmtDataCurta(iso)} (folga no grupo de origem). Para trocar o grupo, use "Editar dia".` : undefined);
   }
 
   function abrirEditorDia(cid, iso) {
@@ -2379,11 +2402,8 @@ const UI = (() => {
       const hab = habNo(c.equipeId);
       const cf = Escala.conflitos(c.id, iso, tid);
       const sel = atuais.find((e) => e.c === c.id);
-      const outros = Escala.turnosDoColab(iso, c.id).filter((x) => x.turnoId !== tid);
-      // Grupo sugerido: o já gravado; senão, se for folga no grupo de origem e o próprio grupo não
-      // atende este turno, o primeiro outro grupo habilitado (apoio na folga)
-      let grupo = sel ? Escala.grupoApoio(c.id, sel.g) : (outros[0]?.apoio || '');
-      if (!sel && !outros.length && !hab) grupo = E().equipes.find((e) => e.id !== c.equipeId && habNo(e.id))?.id || '';
+      // Grupo: o já gravado; senão o sugerido (na folga, turno fixo de outro grupo = cobertura)
+      const grupo = sel ? Escala.grupoApoio(c.id, sel.g) : Escala.grupoSugerido(iso, c.id, tid);
       const grupos = [['', `Próprio grupo${c.equipeId ? ` — ${Equipes.nome(c.equipeId)}` : ''}`],
         ...E().equipes.filter((e) => e.id !== c.equipeId).map((e) => [e.id, `Apoio ao ${e.nome}`])];
       return { c, hab, cf, sel, folga: Escala.emFolga(iso, c.id), grupo, grupos };
